@@ -30,20 +30,34 @@
 // });
 
 
-import Voice from '@react-native-voice/voice';
-import React, { useState } from 'react';
+import Voice, { SpeechResultsEvent } from '@react-native-voice/voice';
+import React, { useEffect, useState } from 'react';
 import { Button, StyleSheet, Text, View } from 'react-native';
 
 export default function BillingScreen() {
-  const [result, setResult] = useState('');
-  const [isListening, setIsListening] = useState(false);
+  const [result, setResult] = useState<string>('');
+  const [isListening, setIsListening] = useState<boolean>(false);
+
+  useEffect(() => {
+    const onSpeechResultsHandler = (e: SpeechResultsEvent) => {
+      if (e.value && e.value.length > 0) {
+        setResult(e.value[0]);
+      }
+    };
+
+    Voice.onSpeechResults = onSpeechResultsHandler;
+
+    return () => {
+      Voice.destroy().then(Voice.removeAllListeners);
+    };
+  }, []);
 
   const startListening = async () => {
     try {
       await Voice.start('en-US');
       setIsListening(true);
     } catch (e) {
-      console.error(e);
+      console.error('Error starting Voice:', e);
     }
   };
 
@@ -52,18 +66,17 @@ export default function BillingScreen() {
       await Voice.stop();
       setIsListening(false);
     } catch (e) {
-      console.error(e);
+      console.error('Error stopping Voice:', e);
     }
-  };
-
-  Voice.onSpeechResults = (e) => {
-    setResult(e.value[0]);
   };
 
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Voice Based Billing</Text>
-      <Button title={isListening ? 'Stop Listening' : 'Start Billing by Voice'} onPress={isListening ? stopListening : startListening} />
+      <Button
+        title={isListening ? 'Stop Listening' : 'Start Billing by Voice'}
+        onPress={isListening ? stopListening : startListening}
+      />
       <Text style={styles.output}>You said: {result}</Text>
     </View>
   );
@@ -74,3 +87,4 @@ const styles = StyleSheet.create({
   title: { fontSize: 20, fontWeight: 'bold', marginBottom: 20 },
   output: { fontSize: 16, marginTop: 20 }
 });
+

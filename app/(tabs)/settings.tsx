@@ -29,22 +29,22 @@
 //   },
 // });
 
-
-import { useColorScheme } from 'nativewind'; // optional for theme toggle
-import React from 'react';
+import React, { useState } from 'react';
 import { StyleSheet, Switch, Text, View } from 'react-native';
 
 export default function SettingsScreen() {
-  const { colorScheme, setColorScheme } = useColorScheme();
+  const [isDarkMode, setIsDarkMode] = useState(false); // custom theme state
+
+  const toggleSwitch = () => setIsDarkMode(previousState => !previousState);
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Settings</Text>
+    <View style={[styles.container, { backgroundColor: isDarkMode ? '#000' : '#fff' }]}>
+      <Text style={[styles.title, { color: isDarkMode ? '#fff' : '#000' }]}>Settings</Text>
       <View style={styles.row}>
-        <Text>Dark Mode</Text>
+        <Text style={{ color: isDarkMode ? '#fff' : '#000' }}>Dark Mode</Text>
         <Switch
-          value={colorScheme === 'dark'}
-          onValueChange={() => setColorScheme(colorScheme === 'dark' ? 'light' : 'dark')}
+          value={isDarkMode}
+          onValueChange={toggleSwitch}
         />
       </View>
     </View>
