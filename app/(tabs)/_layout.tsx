@@ -26,27 +26,27 @@ export default function TabLayout() {
         }),
       }}
     >
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Home',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="billing"
-        options={{
-          title: 'Billing',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="cart.fill" color={color} />, // change icon to something billing related
-        }}
-      />
-      <Tabs.Screen
-        name="settings"
-        options={{
-          title: 'Settings',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="gearshape.fill" color={color} />,
-        }}
-      />
-    </Tabs>
+<Tabs.Screen
+  name="index"
+  options={{
+    title: 'Home',
+    tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
+  }}
+/>
+<Tabs.Screen
+  name="billing"
+  options={{
+    title: 'Billing',
+    tabBarIcon: ({ color }) => <IconSymbol size={28} name="creditcard.fill" color={color} />,
+  }}
+/>
+<Tabs.Screen
+  name="settings"
+  options={{
+    title: 'Settings',
+    tabBarIcon: ({ color }) => <IconSymbol size={28} name="gearshape.fill" color={color} />,
+  }}
+/>
+</Tabs>
   );
 }
