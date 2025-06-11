@@ -2,7 +2,7 @@
 
 buildscript {
     ext {
-        kotlin_version = '1.9.22' // pin Kotlin version
+        kotlin_version = '2.0.21' // pin Kotlin version
         build_tools_version = '8.3.0' // you can adjust as per your Android Studio
     }
     repositories {
