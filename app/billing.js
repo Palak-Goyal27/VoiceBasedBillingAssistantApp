@@ -1,3 +1,5 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useLocalSearchParams, useRouter } from 'expo-router'; // Add this at top
 import { useEffect, useRef, useState } from 'react';
 import { Alert, Button, FlatList, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
@@ -8,65 +10,328 @@ if (Platform.OS !== 'web') {
 
 // --- Robust parsing: last number as price, rest as item, Hindi/English/₹, supports web/mobile ---
 function parseItemsAndPrices(text) {
-  // Remove extra spaces, normalize
-  text = text.trim().replace(/\s+/g, ' ');
-  // Voice commands
-  if (/^new bill$/i.test(text) || /नया बिल|नया बिल$/i.test(text)) return [{ command: 'newBill' }];
-  if (/^remove last item$/i.test(text) || /पिछला|पिछला आइटम|आखिरी|हटाओ|हटा दो$/i.test(text)) return [{ command: 'undo' }];
-  // Extract price (last number with/without currency)
-  const priceRegex = /(\d+(?:\.\d+)?)(\s*(?:rupees|rs|rupaye|रुपये|रुपया|रुपय|₹)|\s*₹)?\s*$/i;
-  const match = text.match(priceRegex);
-  if (match) {
-    let price = match[0].replace(/\s+/, '');
-    if (!/₹|rs|rupees|rupaye|रुपये|रुपया|रुपय/i.test(price)) price = '₹' + match[1];
-    let item = text.slice(0, match.index).replace(/₹|rs|rupees|rupaye|रुपये|रुपया|रुपय/gi, '').trim();
-    if (!item) item = '—';
-    return [{ item, price }];
+  // Expanded Hindi price words mapping with more variants
+  const specialHindiNumbers = {
+    'डाइशो': 250, 'डाईशो': 250, 'ढाई सौ': 250, 'ढाईसो': 250, 'ढाई सो': 250, 'ढईसो': 250, 'ढई सो': 250, 'ढई सौ': 250,
+    'dhaiso': 250, 'dhaiso rupee': 250, 'dhai sau': 250, 'dhai so': 250, 'dhaai sau': 250, 'dhaai so': 250, 'dhaai': 250,
+    'डेढ़ सौ': 150, 'डेड़ सौ': 150, 'डेढ़ सो': 150, 'डेड़ सो': 150, 'डेढ सौ': 150, 'डेढ सो': 150,
+    'darso': 150, 'darso rupee': 150, 'dedh sau': 150, 'dedh so': 150, 'derh sau': 150, 'derh so': 150, 'dedh': 150,
+    'dairso': 150, 'dairso rupee': 150, 'dair sau': 150, 'dair so': 150, 'dair': 150,
+  };
+
+  // Fuzzy match for Hindi price words (returns the best match if within threshold)
+  function fuzzyMatchHindiWord(line) {
+    const threshold = 2; // Allow up to 2 character differences
+    let best = null, bestDist = 99;
+    for (let word in specialHindiNumbers) {
+      if (line.includes(word)) return word; // exact match
+      // Fuzzy: check each word in line
+      for (let token of line.split(/\s+/)) {
+        let dist = levenshtein(token.toLowerCase(), word.toLowerCase());
+        if (dist < bestDist && dist <= threshold) {
+          best = word;
+          bestDist = dist;
+        }
+      }
+    }
+    return best;
   }
-  // No price, treat all as item
-  return [{ item: text, price: '' }];
+
+  // Levenshtein distance for fuzzy matching
+  function levenshtein(a, b) {
+    const dp = Array(a.length + 1).fill().map(() => Array(b.length + 1).fill(0));
+    for (let i = 0; i <= a.length; i++) dp[i][0] = i;
+    for (let j = 0; j <= b.length; j++) dp[0][j] = j;
+    for (let i = 1; i <= a.length; i++) {
+      for (let j = 1; j <= b.length; j++) {
+        if (a[i - 1] === b[j - 1]) dp[i][j] = dp[i - 1][j - 1];
+        else dp[i][j] = 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+      }
+    }
+    return dp[a.length][b.length];
+  }
+
+  function hindiWordToNumber(word) {
+    word = word.trim();
+    if (specialHindiNumbers[word]) return specialHindiNumbers[word];
+    const hindiDigits = '०१२३४५६७८९';
+    if ([...word].every(ch => hindiDigits.includes(ch))) {
+      return Number([...word].map(ch => hindiDigits.indexOf(ch)).join(''));
+    }
+    return null;
+  }
+
+  // Clean and split input into lines, remove empty lines
+  let lines = text.split(/\n/).map(l => l.trim()).filter(Boolean);
+
+  // Merge price-only lines with the previous item line, but only if previous line doesn't already have a price
+  let merged = [];
+  for (let i = 0; i < lines.length; ++i) {
+    let line = lines[i];
+    const isPriceOnly =
+      /^₹?\d+(\.\d+)?\s*(rupees|rs|rupaye|रुपये|रुपया|रुपय|₹)?$/i.test(line) ||
+      Object.keys(specialHindiNumbers).some(w => line === w);
+
+    if (isPriceOnly) {
+      if (
+        merged.length > 0 &&
+        !(
+          /(\d{1,6}(?:\.\d+)?\s*(rupees|rs|rupaye|रुपये|रुपया|रुपय|₹)?$)/i.test(merged[merged.length - 1]) ||
+          Object.keys(specialHindiNumbers).some(w => merged[merged.length - 1].includes(w))
+        )
+      ) {
+        merged[merged.length - 1] += ' ' + line;
+      } else {
+        merged.push(line);
+      }
+    } else {
+      merged.push(line);
+    }
+  }
+
+  merged = merged.filter((l, i, arr) => l && arr.indexOf(l) === i);
+
+  const results = [];
+  for (let line of merged) {
+    let price = '';
+    let item = '';
+    let found = false;
+
+    // Tokenize line
+    let tokens = line.split(/\s+/).filter(Boolean);
+
+    // Find all numbers and Hindi price words in tokens
+    let priceIdx = -1, priceValue = null, priceToken = null;
+    let quantityIdx = -1, quantityValue = null, quantityToken = null;
+
+    // 1. Find last price (number or Hindi price word) for price
+    for (let i = tokens.length - 1; i >= 0; --i) {
+      let t = tokens[i];
+      // Check for Hindi price word (exact or fuzzy)
+      let matchedWord = specialHindiNumbers[t];
+      if (!matchedWord) {
+        let fuzzy = fuzzyMatchHindiWord(t);
+        if (fuzzy) matchedWord = specialHindiNumbers[fuzzy];
+      }
+      if (matchedWord) {
+        priceIdx = i;
+        priceValue = matchedWord;
+        priceToken = tokens[i];
+        break;
+      }
+      // Check for Hindi digits
+      if (/^[०१२३४५६७८९]+$/.test(t)) {
+        priceIdx = i;
+        priceValue = hindiWordToNumber(t);
+        priceToken = tokens[i];
+        break;
+      }
+      // Check for number (possibly with ₹ or currency)
+      let numMatch = t.replace(/₹|rs|rupees|rupaye|रुपये|रुपया|रुपय/gi, '');
+      if (/^\d+(\.\d+)?$/.test(numMatch)) {
+        priceIdx = i;
+        priceValue = Number(numMatch);
+        priceToken = tokens[i];
+        break;
+      }
+    }
+
+    // 2. Find first number (if before any non-number token) for quantity
+    for (let i = 0; i < tokens.length; ++i) {
+      let t = tokens[i];
+      // Only consider as quantity if it's before any non-number token (i.e., at the start)
+      if (i === 0) {
+        // Hindi digits
+        if (/^[०१२३४५६७८९]+$/.test(t)) {
+          quantityIdx = i;
+          quantityValue = hindiWordToNumber(t);
+          quantityToken = tokens[i];
+          break;
+        }
+        // Number
+        let numMatch = t.replace(/₹|rs|rupees|rupaye|रुपये|रुपया|रुपय/gi, '');
+        if (/^\d+(\.\d+)?$/.test(numMatch)) {
+          quantityIdx = i;
+          quantityValue = Number(numMatch);
+          quantityToken = tokens[i];
+          break;
+        }
+      }
+    }
+
+    // 3. Build item name
+    let itemTokens = [];
+    if (quantityIdx === 0 && priceIdx > 0 && priceIdx !== 0) {
+      // Quantity at start, price at end, item is everything in between
+      itemTokens = tokens.slice(0, priceIdx);
+    } else if (priceIdx >= 0) {
+      // No quantity, price at end, item is everything before price
+      itemTokens = tokens.slice(0, priceIdx);
+    } else {
+      // No price, item is whole line
+      itemTokens = tokens;
+    }
+
+    // If quantity at start, include it in item name
+    if (quantityIdx === 0) {
+      // Already included in itemTokens above
+    }
+
+    // Remove currency words from itemTokens
+    item = itemTokens
+      .filter(
+        t =>
+          !/^₹$|^rs$|^rupees$|^rupaye$|^रुपये$|^रुपया$|^रुपय$/i.test(t) &&
+          !Object.keys(specialHindiNumbers).includes(t)
+      )
+      .join(' ')
+      .trim();
+
+    // If quantity at start, ensure it's included in item
+    if (quantityIdx === 0 && item && !item.startsWith(tokens[0])) {
+      item = tokens[0] + ' ' + item;
+    }
+
+    // Set price
+    if (priceIdx >= 0 && priceValue !== null) {
+      price = '₹' + priceValue;
+      found = true;
+    } else {
+      price = '₹0';
+    }
+
+    // If line is just a price, skip
+    if (
+      item === '' &&
+      (priceIdx === 0 || priceIdx === tokens.length - 1) &&
+      (priceValue !== null)
+    ) {
+      continue;
+    }
+
+    // Clean up item
+    item = item.replace(/₹|रुपये|रुपया|rs|rupees|rupaye/gi, '').trim();
+
+    if (item || price) results.push({ item, price });
+  }
+  return results;
 }
 
-export default function BillingScreen() {
+export default function BillingScreen({ navigation, route }) {
   const [isListening, setIsListening] = useState(false);
   const [items, setItems] = useState([]); // For list mode
   const [mode] = useState('list'); // 'list' or 'amount'
   const [editIndex, setEditIndex] = useState(null);
   const [editPrice, setEditPrice] = useState('');
+  const [savedLists, setSavedLists] = useState([]);
+  const [showSavedLists, setShowSavedLists] = useState(false);
+  const [selectedBillIndex, setSelectedBillIndex] = useState(null);
   const recognitionRef = useRef(null);
-  // Track if user requested stop
-  const stopRequestedRef = useRef(false);
+  const router = useRouter();
+  const webParams = useLocalSearchParams ? useLocalSearchParams() : {};
+
+  // Load saved lists on mount
+  useEffect(() => {
+    loadSavedLists();
+  }, []);
+
+  // When loading a saved bill, also set its index
+  useEffect(() => {
+    let selected = route?.params?.selectedBill || webParams.selectedBill;
+    let index = route?.params?.selectedBillIndex || webParams.selectedBillIndex;
+    if (selected) {
+      if (typeof selected === 'string') {
+        try { selected = JSON.parse(selected); } catch (e) { selected = null; }
+      }
+      if (selected && selected.items) {
+        setItems(selected.items);
+        setSelectedBillIndex(index !== undefined ? Number(index) : null);
+      }
+      if (navigation && typeof navigation.setParams === 'function') {
+        navigation.setParams({ selectedBill: undefined, selectedBillIndex: undefined });
+      }
+    }
+  }, [route?.params?.selectedBill, webParams.selectedBill]);
+
+  // Save Bill (always creates new)
+  const saveCurrentList = async () => {
+    if (items.length === 0) {
+      Alert.alert('Nothing to save', 'Your bill is empty.');
+      return;
+    }
+    let name = prompt('Enter a name for this bill:');
+    if (!name) return;
+    const newList = { name, items, date: new Date().toISOString() };
+    let allLists = [];
+    try {
+      const data = await AsyncStorage.getItem('saved_bills');
+      if (data) allLists = JSON.parse(data);
+      allLists.push(newList);
+      await AsyncStorage.setItem('saved_bills', JSON.stringify(allLists));
+      setSavedLists(allLists);
+      setSelectedBillIndex(null); // reset after save
+      Alert.alert('Saved!', 'Your bill has been saved.');
+    } catch (e) {
+      Alert.alert('Error', 'Could not save the bill.');
+    }
+  };
+
+  // Update Bill (only if editing an existing bill)
+  const updateCurrentBill = async () => {
+    if (selectedBillIndex === null || selectedBillIndex === undefined) return;
+    let allLists = [];
+    try {
+      const data = await AsyncStorage.getItem('saved_bills');
+      if (data) allLists = JSON.parse(data);
+      allLists[selectedBillIndex] = {
+        ...allLists[selectedBillIndex],
+        items,
+        date: new Date().toISOString(),
+      };
+      await AsyncStorage.setItem('saved_bills', JSON.stringify(allLists));
+      setSavedLists(allLists);
+      Alert.alert('Updated!', 'Your bill has been updated.');
+    } catch (e) {
+      Alert.alert('Error', 'Could not update the bill.');
+    }
+  };
+
+  // Load all saved lists
+  const loadSavedLists = async () => {
+    try {
+      const data = await AsyncStorage.getItem('saved_bills');
+      if (data) setSavedLists(JSON.parse(data));
+      else setSavedLists([]);
+    } catch (e) {
+      setSavedLists([]);
+    }
+  };
+
+  // Delete a saved list
+  const deleteSavedList = async (index) => {
+    let allLists = [...savedLists];
+    allLists.splice(index, 1);
+    await AsyncStorage.setItem('saved_bills', JSON.stringify(allLists));
+    setSavedLists(allLists);
+  };
 
   useEffect(() => {
-    if (Platform.OS === 'web') {
+    if (Platform.OS === 'web' && !recognitionRef.current) {
       if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         const recognition = new SpeechRecognition();
         recognition.lang = 'hi-IN,en-IN';
-        recognition.interimResults = false; // Only process finalized, accurate results
+        recognition.interimResults = false;
         recognition.maxAlternatives = 1;
-        recognition.continuous = true; // Keep listening until stopped
-        recognition.onresult = (event) => {
-          let text = '';
-          for (let i = event.resultIndex; i < event.results.length; ++i) {
-            text = event.results[i][0].transcript;
-            if (event.results[i].isFinal) {
-              processBillingCommand(text);
-            }
-          }
-        };
-        recognition.onerror = (event) => {
-          Alert.alert('Speech Error', event.error);
-        };
-        recognition.onend = () => {
-          setIsListening(false); // Always set to false on end
-        };
+        recognition.continuous = true;
         recognitionRef.current = recognition;
-      } else {
-        Alert.alert('Not Supported', 'Speech recognition is not supported in this browser.');
       }
-    } else {
-      // Native setup
+    }
+  }, []);
+
+  // Native setup
+  useEffect(() => {
+    if (Platform.OS !== 'web') {
       const requestPermissions = async () => {
         const { Audio } = require('expo-av');
         const { status } = await Audio.requestPermissionsAsync();
@@ -84,66 +349,22 @@ export default function BillingScreen() {
         }
       };
       requestPermissions();
-      const onSpeechStart = (e) => {
-        console.log('Speech recognition started:', e);
-      };
-      const onSpeechEnd = (e) => {
-        console.log('Speech recognition ended:', e);
-        setIsListening(false);
-      };
-      const onSpeechResults = (e) => {
-        console.log('Speech results event:', e);
-        if (e.value?.length) {
-          const text = e.value[0];
-          setResult((prev) => [...prev, text]);
-          processBillingCommand(text);
-        }
-      };
-      const onSpeechError = (e) => {
-        console.warn('Speech error:', e.error);
-        Alert.alert('Speech Error', JSON.stringify(e.error));
-        setIsListening(false);
-      };
-      Voice.onSpeechStart = onSpeechStart;
-      Voice.onSpeechEnd = onSpeechEnd;
-      Voice.onSpeechResults = onSpeechResults;
-      Voice.onSpeechError = onSpeechError;
-      return () => {
-        Voice.destroy().then(() => Voice.removeAllListeners());
-      };
     }
-  }, [isListening]);
-
-  // Use a persistent recognitionRef for the browser
-  if (Platform.OS === 'web') {
-    if (!window._persistentRecognition) {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (SpeechRecognition) {
-        const recognition = new SpeechRecognition();
-        recognition.lang = 'hi-IN,en-IN';
-        recognition.interimResults = false;
-        recognition.maxAlternatives = 1;
-        recognition.continuous = true;
-        window._persistentRecognition = recognition;
-      }
-    }
-  }
+  }, []);
 
   // Update stopListening to set stopRequestedRef
   const stopListening = async () => {
     if (Platform.OS === 'web') {
-      const recognition = window._persistentRecognition;
+      const recognition = recognitionRef.current;
       if (recognition) {
         recognition.onend = () => {
           setIsListening(false);
-          // Remove the onend handler after stop to avoid double-calling
           recognition.onend = null;
         };
         recognition.stop();
       }
     } else {
       try {
-        console.log('Requesting to stop voice recognition...');
         await Voice.stop();
         setIsListening(false);
       } catch (e) {
@@ -154,7 +375,7 @@ export default function BillingScreen() {
   };
 
   const startListening = async () => {
-    if (isListening) return; // Prevent double start
+    if (isListening) return;
     if (Platform.OS === 'web') {
       const recognition = recognitionRef.current;
       if (recognition) {
@@ -169,7 +390,6 @@ export default function BillingScreen() {
       }
     } else {
       try {
-        console.log('Requesting to start voice recognition...');
         await Voice.start('en-IN');
         setIsListening(true);
       } catch (e) {
@@ -215,7 +435,7 @@ export default function BillingScreen() {
   const shareBill = () => {
     let billText = 'Bill:\n';
     items.forEach(item => {
-      billText += `${item.name || item.raw}  Qty: ${item.quantity || 1}  Price: ${item.price || ''}  Amt: ${item.price ? item.price : ''}\n`;
+      billText += `${item.item}  Price: ${item.price || ''}\n`;
     });
     billText += `Total: ${total}`;
     const url = `https://wa.me/?text=${encodeURIComponent(billText)}`;
@@ -239,12 +459,35 @@ export default function BillingScreen() {
               if (pauseTimeout) clearTimeout(pauseTimeout);
               pauseTimeout = setTimeout(() => {
                 processBillingCommand(text);
-              }, 1500); // 1.5s pause
+              }, 200); // 0.2s pause
             }
           }
         };
       }
       return () => { if (pauseTimeout) clearTimeout(pauseTimeout); };
+    }
+  }, [isListening]);
+
+  // Web recognition handler
+  useEffect(() => {
+    if (Platform.OS === 'web' && recognitionRef.current) {
+      const recognition = recognitionRef.current;
+      recognition.onresult = (event) => {
+        let text = '';
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          text = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            processBillingCommand(text);
+          }
+        }
+      };
+      recognition.onerror = (event) => {
+        console.error('Speech recognition error:', event.error);
+        setIsListening(false);
+      };
+      recognition.onend = () => {
+        setIsListening(false);
+      };
     }
   }, [isListening]);
 
@@ -254,22 +497,25 @@ export default function BillingScreen() {
       <View style={{ flexDirection: 'row', marginBottom: 10 }}>
         <Button
           title="List"
-          onPress={() => handleModeSwitch('list')}
+          onPress={() => {}}
           color={'#117bff'}
           disabled={true}
         />
       </View>
-      <Button
-        title="Start"
-        onPress={startListening}
-        disabled={isListening} // Only disable if already listening
-      />
-      <Button
-        title="Stop"
-        onPress={stopListening}
-        disabled={!isListening} // Only disable if not listening
-        color="#d9534f"
-      />
+      {/* Start and Stop buttons side by side */}
+      <View style={{ flexDirection: 'row', marginBottom: 10, gap: 10 }}>
+        <Button
+          title="Start"
+          onPress={startListening}
+          disabled={isListening}
+        />
+        <Button
+          title="Stop"
+          onPress={stopListening}
+          disabled={!isListening}
+          color="#d9534f"
+        />
+      </View>
       <Button
         title="Clear Bill List"
         onPress={() => { setItems([]); }}
@@ -285,6 +531,8 @@ export default function BillingScreen() {
         onPress={() => setItems([])}
         color="#007bff"
       />
+
+      {/* Table and Bill List */}
       <View style={styles.tableHeader}>
         <Text style={[styles.tableCellHeader, styles.snCell]}>S.No.</Text>
         <Text style={[styles.tableCellHeader, styles.itemCell]}>Item</Text>
@@ -328,9 +576,9 @@ export default function BillingScreen() {
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => {
-                          setEditIndex(index);
-                          setEditPrice((item.price || '').replace(/[^\d.]/g, ''));
-                        }}
+                setEditIndex(index);
+                setEditPrice((item.price || '').replace(/[^\d.]/g, ''));
+              }}
               style={{ marginHorizontal: 4 }}
             >
               <Text style={{ color: '#007bff', fontWeight: 'bold' }}>Modify</Text>
@@ -345,10 +593,74 @@ export default function BillingScreen() {
         <Text style={[styles.tableCellHeader, styles.priceCell]}>{total} rs</Text>
       </View>
       <Button title="Share Bill on WhatsApp" onPress={shareBill} color="#25D366" />
+
+      {/* Save/Update buttons fixed at bottom right */}
+      <View style={{
+        position: 'absolute',
+        bottom: 24,
+        right: 24,
+        alignItems: 'flex-end',
+        zIndex: 10,
+      }}>
+        {/* Show Update Bill only if editing a saved bill */}
+        {selectedBillIndex !== null && selectedBillIndex !== undefined && (
+          <Button
+            title="Update Bill"
+            onPress={updateCurrentBill}
+            color="#007bff"
+          />
+        )}
+        <View style={{ height: 10 }} />
+        <Button
+          title="Save Bill"
+          onPress={saveCurrentList}
+          color="#28a745"
+        />
+      </View>
+
+      {/* Saved Lists Modal/Section */}
+      {showSavedLists && (
+        <View style={{
+          position: 'absolute',
+          bottom: 90,
+          right: 24,
+          width: 260,
+          backgroundColor: '#f9f9f9',
+          padding: 10,
+          borderRadius: 8,
+          shadowColor: '#000',
+          shadowOpacity: 0.1,
+          shadowRadius: 8,
+          elevation: 4,
+        }}>
+          <Text style={{ fontWeight: 'bold', marginBottom: 8 }}>Saved Bills:</Text>
+          {savedLists.length === 0 && <Text>No saved bills.</Text>}
+          <FlatList
+            data={savedLists}
+            keyExtractor={(_, i) => i.toString()}
+            renderItem={({ item, index }) => (
+              <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 6 }}>
+                <TouchableOpacity
+                  style={{ flex: 1 }}
+                  onPress={() => {
+                    setItems(item.items);
+                    setShowSavedLists(false);
+                  }}
+                >
+                  <Text>{item.name} ({new Date(item.date).toLocaleString()})</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => deleteSavedList(index)}>
+                  <Text style={{ color: 'red', marginLeft: 10 }}>Delete</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          />
+          <Button title="Close" onPress={() => setShowSavedLists(false)} />
+        </View>
+      )}
     </View>
   );
 }
-
 const styles = StyleSheet.create({
   container: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
   title: { fontSize: 20, fontWeight: 'bold', marginBottom: 20 },
@@ -361,4 +673,3 @@ const styles = StyleSheet.create({
   itemCell: { flex: 2 },
   priceCell: { flex: 1 },
 });
-

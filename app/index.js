@@ -1,13 +1,15 @@
 import { useState } from 'react';
 import { Button, StyleSheet, Text, View } from 'react-native';
 import BillingScreen from './billing';
-import CreateListScreen from './CreateListScreen';
+import MeasurementScreen from './Measurement';
+import SavedBillsScreen from './SavedBillsScreen'; // <-- Add this import
 
 export default function HomeScreen() {
   const [screen, setScreen] = useState('Home');
 
   if (screen === 'Billing') return <BillingScreen />;
-  if (screen === 'CreateList') return <CreateListScreen onBackHome={() => setScreen('Home')} />;
+  if (screen === 'Measurement') return <MeasurementScreen onBackHome={() => setScreen('Home')} />;
+  if (screen === 'SavedBills') return <SavedBillsScreen navigation={{ goBack: () => setScreen('Home') }} />; // <-- Add this
 
   return (
     <View style={styles.container}>
@@ -16,7 +18,9 @@ export default function HomeScreen() {
       <View style={{ height: 30 }} />
       <Button title="Start Billing" onPress={() => setScreen('Billing')} />
       <View style={{ height: 20 }} />
-      <Button title="Create List" onPress={() => setScreen('CreateList')} />
+      <Button title="Measurement" onPress={() => setScreen('Measurement')} />
+      <View style={{ height: 20 }} />
+      <Button title="Saved Bills" onPress={() => setScreen('SavedBills')} /> {/* <-- Add this */}
     </View>
   );
 }

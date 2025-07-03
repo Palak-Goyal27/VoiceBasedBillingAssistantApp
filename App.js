@@ -1,27 +1,18 @@
-import { NavigationContainer } from '@react-navigation/native';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { useState } from 'react';
-import BillingScreen from './app/billing';
-import CreateListScreen from './app/CreateListScreen';
-import LandingScreen from './app/LandingScreen';
-import SettingsScreen from './app/SettingsScreen';
 
-const Stack = createNativeStackNavigator();
+import * as React from 'react';
+import { NavigationContainer } from '@react-navigation/native';
+import { createStackNavigator } from '@react-navigation/stack';
+import BillingScreen from './app/billing';
+import SavedBillsScreen from './app/SavedBillsScreen';
+
+const Stack = createStackNavigator();
 
 export default function App() {
-  const [screen, setScreen] = useState('Landing');
-
-  if (screen === 'Billing') return <BillingScreen />;
-  if (screen === 'CreateList') return <CreateListScreen />;
   return (
     <NavigationContainer>
-      <Stack.Navigator initialRouteName="Landing" screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="Landing">
-          {(props) => <LandingScreen {...props} onStartBilling={() => setScreen('Billing')} onCreateList={() => setScreen('CreateList')} />}
-        </Stack.Screen>
+      <Stack.Navigator initialRouteName="Billing">
         <Stack.Screen name="Billing" component={BillingScreen} />
-        <Stack.Screen name="Settings" component={SettingsScreen} />
-        <Stack.Screen name="CreateList" component={CreateListScreen} />
+        <Stack.Screen name="SavedBills" component={SavedBillsScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );
