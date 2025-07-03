@@ -1,3 +1,120 @@
+# Voice Based Billing Assistant App
+
+A cross-platform (mobile + web) app for fast, easy, and smart billing using voice and manual input. Designed for shopkeepers, vendors, and anyone who wants to generate bills quickly in Hindi/English.
+
+---
+
+## 🚀 Features
+
+- **Voice & Manual Billing:** Add items and prices by speaking or typing (supports Hindi/English/colloquial/numeric).
+- **Robust Parsing:** Handles edge cases, quantities, and price words (e.g., "25 maggi 150", "maggi 25", "डेढ़ सौ").
+- **Save, Update, and Copy Bills:** Save new bills, update existing ones, or save as a copy.
+- **Saved Bills List:** View, search, sort, and delete saved bills.
+- **Natural Sorting:** Numbers before letters (e.g., "12a" before "aman").
+- **Real-Time Search:** Filter bills as you type.
+- **Share on WhatsApp:** Instantly share your bill.
+- **Measurement Screen:** Manual ready reckoner for quick conversions.
+- **Cross-Platform:** Works on Android, iOS, and Web (Expo).
+
+---
+
+## 🛠️ Technologies Used
+
+- React Native (Expo)
+- JavaScript/TypeScript
+- AsyncStorage (local storage)
+- expo-router (navigation)
+- WhatsApp Web API (sharing)
+- React Hooks
+- (Optional) Voice Recognition
+
+---
+
+## 📱 Screenshots
+
+> _Add screenshots of Home, Billing, Saved Bills, and Measurement screens here._
+
+---
+
+## 🏗️ Project Structure
+
+```
+/app
+  |-- billing.js
+  |-- SavedBillsScreen.js
+  |-- Measurement.js
+  |-- index.js
+/assets
+/components
+/constants
+/hooks
+```
+
+---
+
+## 📝 Usage Guide
+
+1. **Home Screen:**  
+   - Start Billing, Measurement, or view Saved Bills.
+
+2. **Billing Screen:**  
+   - Add items/prices by voice or typing.
+   - Modify/delete entries.
+   - Save, update, or copy bills.
+   - Share bill on WhatsApp.
+
+3. **Saved Bills Screen:**  
+   - View all saved bills (S.No., name, date).
+   - Search and sort bills.
+   - Open, update, or delete any bill.
+
+4. **Measurement Screen:**  
+   - Use manual ready reckoner for conversions.
+
+---
+
+## 💡 How It Works
+
+- **Data Storage:** Bills are saved locally using AsyncStorage.
+- **Navigation:** expo-router for seamless navigation (mobile + web).
+- **Voice Input:** (If supported) Speech-to-text for fast billing.
+- **Natural Sorting & Search:** Bills are sorted and filtered in real-time.
+
+---
+
+## 🌱 Future Improvements
+
+- Cloud sync & user authentication
+- Export to PDF/Excel
+- More languages & better voice support
+- Analytics & insights
+- UI/UX enhancements
+
+---
+
+## 📚 Learnings
+
+- React Native & Expo for cross-platform apps
+- State management with hooks
+- Local storage with AsyncStorage
+- Navigation for web & mobile
+- Robust parsing and user-centric design
+- Git & GitHub for version control
+
+---
+
+## 👩‍💻 Contributors
+
+- [Your Name](https://github.com/Palak-Goyal27)
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License.
+
+---
+
 # Welcome to your Expo app 👋
 
 This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
