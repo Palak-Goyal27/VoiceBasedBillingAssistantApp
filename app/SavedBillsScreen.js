@@ -1,15 +1,18 @@
+
 import AsyncStorage from '@react-native-async-storage/async-storage';
+
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Button, FlatList, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
-// Natural sort function (numbers before letters, case-insensitive)
+
 function naturalSort(a, b) {
   return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
 }
 
 export default function SavedBillsScreen({ navigation, route }) {
   const [savedLists, setSavedLists] = useState([]);
+  const [draft, setDraft] = useState(null);
   const [search, setSearch] = useState('');
   const router = useRouter();
 
@@ -23,15 +26,40 @@ export default function SavedBillsScreen({ navigation, route }) {
         setSavedLists([]);
       }
     };
+    const loadDraft = async () => {
+      try {
+        const data = await AsyncStorage.getItem('draft_bills');
+        if (data) {
+          const parsed = JSON.parse(data);
+          if (parsed && typeof parsed === 'object') {
+            setDraft(parsed);
+          } else {
+            setDraft(null);
+          }
+        } else {
+          setDraft(null);
+        }
+      } catch (e) {
+        setDraft(null);
+      }
+    };
     loadSavedLists();
+    loadDraft();
     if (navigation && typeof navigation.addListener === 'function') {
-      const unsubscribe = navigation.addListener('focus', loadSavedLists);
-      return unsubscribe;
+      const unsubscribeSaved = navigation.addListener('focus', loadSavedLists);
+      const unsubscribeDraft = navigation.addListener('focus', loadDraft);
+      return () => {
+        unsubscribeSaved();
+        unsubscribeDraft();
+      };
     }
-    // For web: listen to router change
     if (router && typeof router.events?.addListener === 'function') {
-      const unsubscribe = router.events.addListener('routeChangeComplete', loadSavedLists);
-      return () => unsubscribe();
+      const unsubscribeSaved = router.events.addListener('routeChangeComplete', loadSavedLists);
+      const unsubscribeDraft = router.events.addListener('routeChangeComplete', loadDraft);
+      return () => {
+        unsubscribeSaved();
+        unsubscribeDraft();
+      };
     }
     return undefined;
   }, [navigation, router]);
@@ -43,14 +71,19 @@ export default function SavedBillsScreen({ navigation, route }) {
     setSavedLists(allLists);
   };
 
+  const deleteDraft = async () => {
+    await AsyncStorage.removeItem('draft_bills');
+    setDraft(null);
+  };
+
   // Navigation helper
-  const goToBilling = (item, index) => {
+  const goToBilling = (item, index, source) => {
     if (navigation && typeof navigation.navigate === 'function') {
-      navigation.navigate('Billing', { selectedBill: item, selectedBillIndex: index });
+      navigation.navigate('Billing', { selectedBill: item, selectedBillIndex: index, source });
     } else if (router && typeof router.push === 'function') {
       router.push({
         pathname: '/billing',
-        params: { selectedBill: JSON.stringify(item), selectedBillIndex: index }
+        params: { selectedBill: JSON.stringify(item), selectedBillIndex: index, source }
       });
     } else {
       if (typeof window !== 'undefined') {
@@ -60,7 +93,7 @@ export default function SavedBillsScreen({ navigation, route }) {
   };
 
   // Filter and sort bills
-  const filteredSortedLists = savedLists
+  const filteredSortedSavedLists = savedLists
     .filter(bill =>
       bill.name &&
       bill.name.toLowerCase().includes(search.toLowerCase())
@@ -88,9 +121,9 @@ export default function SavedBillsScreen({ navigation, route }) {
           onChangeText={setSearch}
         />
       </View>
-      {filteredSortedLists.length === 0 && <Text>No saved bills.</Text>}
+      {filteredSortedSavedLists.length === 0 && <Text>No saved bills.</Text>}
       <FlatList
-        data={filteredSortedLists}
+        data={filteredSortedSavedLists}
         keyExtractor={(_, i) => i.toString()}
         renderItem={({ item, index }) => (
           <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 8 }}>
@@ -98,7 +131,7 @@ export default function SavedBillsScreen({ navigation, route }) {
             <Text style={{ width: 32, textAlign: 'center', fontWeight: 'bold' }}>{index + 1}.</Text>
             <TouchableOpacity
               style={{ flex: 1 }}
-              onPress={() => goToBilling(item, savedLists.findIndex(b => b === item))}
+              onPress={() => goToBilling(item, savedLists.findIndex(b => b === item), 'saved')}
             >
               <Text>{item.name} ({new Date(item.date).toLocaleString()})</Text>
             </TouchableOpacity>
@@ -108,6 +141,22 @@ export default function SavedBillsScreen({ navigation, route }) {
           </View>
         )}
       />
+      <Text style={{ fontWeight: 'bold', fontSize: 20, marginVertical: 16 }}>Draft Bill</Text>
+      {!draft && <Text>No draft bill.</Text>}
+      {draft && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 8 }}>
+          <Text style={{ width: 32, textAlign: 'center', fontWeight: 'bold' }}>1.</Text>
+          <TouchableOpacity
+            style={{ flex: 1 }}
+            onPress={() => goToBilling(draft, null, 'draft')}
+          >
+            <Text>Draft ({new Date(draft.date).toLocaleString()})</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={deleteDraft}>
+            <Text style={{ color: 'red', marginLeft: 10 }}>Delete</Text>
+          </TouchableOpacity>
+        </View>
+      )}
       <Button
         title="Back to Billing"
         onPress={() => {

@@ -7,7 +7,9 @@ import SavedBillsScreen from './SavedBillsScreen'; // <-- Add this import
 export default function HomeScreen() {
   const [screen, setScreen] = useState('Home');
 
-  if (screen === 'Billing') return <BillingScreen />;
+  if (typeof screen === 'object' && screen.name === 'Billing') {
+    return <BillingScreen autoStart={screen.autoStart} />;
+  }
   if (screen === 'Measurement') return <MeasurementScreen onBackHome={() => setScreen('Home')} />;
   if (screen === 'SavedBills') return <SavedBillsScreen navigation={{ goBack: () => setScreen('Home') }} />; // <-- Add this
 
@@ -16,7 +18,7 @@ export default function HomeScreen() {
       <Text style={styles.title}>Welcome to Voice Based Billing Assistant!</Text>
       <Text style={styles.subtitle}>Bol Kar Bill Banao – Smart Billing Made Simple by Speech</Text>
       <View style={{ height: 30 }} />
-      <Button title="Start Billing" onPress={() => setScreen('Billing')} />
+      <Button title="Start Billing" onPress={() => setScreen({ name: 'Billing', autoStart: true })} />
       <View style={{ height: 20 }} />
       <Button title="Measurement" onPress={() => setScreen('Measurement')} />
       <View style={{ height: 20 }} />

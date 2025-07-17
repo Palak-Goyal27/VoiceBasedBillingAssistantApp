@@ -217,7 +217,7 @@ function parseItemsAndPrices(text) {
   return results;
 }
 
-export default function BillingScreen({ navigation, route }) {
+export default function BillingScreen({ navigation, route, autoStart, goHome }) {
   const [isListening, setIsListening] = useState(false);
   const [items, setItems] = useState([]); // For list mode
   const [mode] = useState('list'); // 'list' or 'amount'
@@ -235,23 +235,63 @@ export default function BillingScreen({ navigation, route }) {
     loadSavedLists();
   }, []);
 
-  // When loading a saved bill, also set its index
+  // When loading a saved bill or draft, also set its index and source
   useEffect(() => {
     let selected = route?.params?.selectedBill || webParams.selectedBill;
     let index = route?.params?.selectedBillIndex || webParams.selectedBillIndex;
+    let source = route?.params?.source || webParams.source; // 'saved' or 'draft'
     if (selected) {
       if (typeof selected === 'string') {
         try { selected = JSON.parse(selected); } catch (e) { selected = null; }
       }
       if (selected && selected.items) {
         setItems(selected.items);
-        setSelectedBillIndex(index !== undefined ? Number(index) : null);
+        if (source === 'saved') {
+          setSelectedBillIndex(index !== undefined ? Number(index) : null);
+        } else {
+          setSelectedBillIndex(null);
+        }
       }
       if (navigation && typeof navigation.setParams === 'function') {
-        navigation.setParams({ selectedBill: undefined, selectedBillIndex: undefined });
+        navigation.setParams({ selectedBill: undefined, selectedBillIndex: undefined, source: undefined });
       }
     }
   }, [route?.params?.selectedBill, webParams.selectedBill]);
+
+
+
+  // Drafts state
+  // Removed drafts state and related UI as per user request
+
+  // Load drafts from AsyncStorage
+  // Removed loadDrafts function as no UI for drafts here
+
+
+  // Save draft to AsyncStorage
+  const saveDraft = async (draft) => {
+    try {
+      console.log('Saving draft:', draft);
+      // Save single draft object, not array
+      await AsyncStorage.setItem('draft_bills', JSON.stringify(draft));
+    } catch (e) {
+      console.error('Error saving draft:', e);
+    }
+  };
+
+  // Remove draft from AsyncStorage
+  const removeDraft = async () => {
+    try {
+      await AsyncStorage.removeItem('draft_bills');
+    } catch (e) {
+      console.error('Error removing draft:', e);
+    }
+  };
+
+
+  // Remove autosave draft on items change to avoid multiple drafts
+  // Draft will be saved only on Clear Bill List and New Bill button clicks
+
+
 
   // Save Bill (always creates new)
   const saveCurrentList = async () => {
@@ -271,10 +311,13 @@ export default function BillingScreen({ navigation, route }) {
       setSavedLists(allLists);
       setSelectedBillIndex(null); // reset after save
       Alert.alert('Saved!', 'Your bill has been saved.');
+      // Remove draft since this is a permanent save
+      await removeDraft();
     } catch (e) {
       Alert.alert('Error', 'Could not save the bill.');
     }
   };
+
 
   // Update Bill (only if editing an existing bill)
   const updateCurrentBill = async () => {
@@ -291,6 +334,8 @@ export default function BillingScreen({ navigation, route }) {
       await AsyncStorage.setItem('saved_bills', JSON.stringify(allLists));
       setSavedLists(allLists);
       Alert.alert('Updated!', 'Your bill has been updated.');
+      // Remove draft since this is a permanent update
+      await removeDraft();
     } catch (e) {
       Alert.alert('Error', 'Could not update the bill.');
     }
@@ -491,8 +536,17 @@ export default function BillingScreen({ navigation, route }) {
     }
   }, [isListening]);
 
+  useEffect(() => {
+    if (autoStart && !isListening) {
+      startListening();
+    }
+    // Only run on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <View style={styles.container}>
+      <Button title="Back to Home" onPress={goHome} color="#888" />
       <Text style={styles.title}>Voice Based Billing</Text>
       <View style={{ flexDirection: 'row', marginBottom: 10 }}>
         <Button
@@ -518,7 +572,13 @@ export default function BillingScreen({ navigation, route }) {
       </View>
       <Button
         title="Clear Bill List"
-        onPress={() => { setItems([]); }}
+        onPress={async () => {
+          if (items.length > 0) {
+            const draft = { items, date: new Date().toISOString() };
+            await saveDraft(draft);
+          }
+          setItems([]);
+        }}
         color="#d9534f"
       />
       <Button
@@ -528,11 +588,17 @@ export default function BillingScreen({ navigation, route }) {
       />
       <Button
         title="New Bill"
-        onPress={() => setItems([])}
+        onPress={async () => {
+          if (items.length > 0) {
+            const itemsCopy = [...items];
+            const draft = { items: itemsCopy, date: new Date().toISOString() };
+            await saveDraft(draft);
+          }
+          setItems([]);
+        }}
         color="#007bff"
       />
 
-      {/* Table and Bill List */}
       <View style={styles.tableHeader}>
         <Text style={[styles.tableCellHeader, styles.snCell]}>S.No.</Text>
         <Text style={[styles.tableCellHeader, styles.itemCell]}>Item</Text>
